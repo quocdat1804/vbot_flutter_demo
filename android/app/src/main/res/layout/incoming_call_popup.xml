@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="50dp"
+    android:gravity="center_vertical"
+    android:orientation="horizontal">
+
+    <ImageView
+        android:layout_width="45dp"
+        android:layout_height="45dp"
+        android:layout_marginStart="16dp"
+        android:scaleType="fitCenter"
+        android:src="@drawable/baseline_person_24" />
+
+    <LinearLayout
+        android:layout_width="0dp"
+        android:layout_height="match_parent"
+        android:layout_marginStart="16dp"
+        android:layout_weight="1"
+        android:gravity="center_vertical"
+        android:orientation="vertical">
+
+        <TextView
+            android:id="@+id/tvName"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:textColor="@color/black"
+            android:textSize="16sp"
+            android:textStyle="bold"
+            tools:text="Tên" />
+
+        <TextView
+            android:id="@+id/tvIncommingCall"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Incoming Call"
+            android:textColor="@color/black" />
+
+    </LinearLayout>
+
+    <ImageView
+        android:id="@+id/btnRejectCall"
+        android:layout_width="45dp"
+        android:layout_height="45dp"
+        android:background="@color/red"
+        android:scaleType="centerInside"
+        android:src="@drawable/ic_va_phone_hangup"
+        android:tint="@color/white" />
+
+    <ImageView
+        android:id="@+id/btnAcceptCall"
+        android:layout_width="45dp"
+        android:layout_height="45dp"
+        android:layout_marginStart="8dp"
+        android:layout_marginEnd="16dp"
+        android:background="@color/green"
+        android:scaleType="centerInside"
+        android:src="@drawable/ic_va_call"
+        android:tint="@color/white" />
+
+</LinearLayout>

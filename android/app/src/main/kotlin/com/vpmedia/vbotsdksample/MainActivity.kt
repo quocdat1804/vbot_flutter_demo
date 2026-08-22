@@ -226,6 +226,9 @@ class MainActivity : FlutterActivity(), MethodChannel.MethodCallHandler,
      */
     private fun emitCurrentCallState() {
         if (!clientExists() || !client.hasActiveCall()) return
+        // Không emit state cho cuộc gọi đã kết thúc — tránh Flutter mở
+        // call screen rồi tắt ngay (flash UI)
+        if (currentCallState == "disconnected" || currentCallState == "none") return
 
         // Chỉ fallback sang client.callName() nếu chưa có tên từ push data
         if (nameCall.isEmpty()) {

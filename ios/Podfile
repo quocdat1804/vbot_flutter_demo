@@ -1,11 +1,11 @@
 
 platform :ios, '13.5'
-source "https://github.com/CocoaPods/Specs.git"
+source "https://cdn.cocoapods.org/"
 
 target 'Runner' do
   use_frameworks!
   
-  pod 'VBotPhoneSDKiOS-Public', '1.1.8'
+  pod 'VBotPhoneSDKiOS-Public', :git => 'https://github.com/VBotDevTeam/VBotPhoneSDKiOS-Public.git', :tag => '1.1.9'
   
   target 'RunnerTests' do
     inherit! :search_paths

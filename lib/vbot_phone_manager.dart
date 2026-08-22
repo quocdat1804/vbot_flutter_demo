@@ -25,7 +25,6 @@ class VBotPhoneManager {
 
   Future<void> init() async {
     if (_initialized) return;
-    debugPrint("Initializing VBotPhoneManager");
     _eventSubscription = _eventChannel.receiveBroadcastStream().listen(
         _handleEvent,
         onError: (e) => debugPrint("Stream error: $e"),
@@ -39,7 +38,6 @@ class VBotPhoneManager {
       final sink = VBotSink.fromMap(map);
       currentSink = sink;
       _callStateController.add(sink);
-      debugPrint("Parsed VBotSink: $sink");
     } catch (e, st) {
       debugPrint("Error parsing event: $e");
       debugPrint("Stack trace: $st");
@@ -71,8 +69,9 @@ class VBotPhoneManager {
     try {
       final result = await _methodChannel.invokeMethod('connect', {
         'token': token,
-        if (environment != null) 'environment': environment,
-        if (baseUrl != null) 'baseUrl': baseUrl,
+        if (environment != null && environment.isNotEmpty)
+          'environment': environment,
+        if (baseUrl != null && baseUrl.isNotEmpty) 'baseUrl': baseUrl,
       });
       return (result as Map)['displayName'] as String?;
     } catch (e) {

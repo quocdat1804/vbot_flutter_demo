@@ -18,12 +18,28 @@ class _CallPageState extends State<CallPage> {
   void initState() {
     super.initState();
 
+    // Kiểm tra ngay: nếu cuộc gọi ĐÃ kết thúc trước khi trang này mở
+    // (event "disconnected" đã emit trên broadcast stream trước khi subscribe)
+    // → pop ngay ở frame kế tiếp, không hiện UI gì cả.
+    final current = vbotManager.currentSink;
+    if (current == null ||
+        current.state == 'disconnected' ||
+        current.state == 'none') {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) Navigator.pop(context);
+      });
+      // Vẫn tạo subscription (sẽ bị cancel trong dispose)
+      _sub = vbotManager.callStateStream.listen((_) {});
+      return;
+    }
+
     _sub = vbotManager.callStateStream.listen(
       (vbotSink) {
         if (mounted) {
-          setState(() {});
-          if (vbotSink.state == 'disconnected') {
+          if (vbotSink.state == 'disconnected' || vbotSink.state == 'none') {
             Navigator.pop(context);
+          } else {
+            setState(() {});
           }
         }
       },

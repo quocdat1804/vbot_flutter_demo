@@ -1,5 +1,7 @@
+import AVFoundation
 import Flutter
 import MediaPlayer
+import PushKit
 import UIKit
 import VBotPhoneSDK
 
@@ -23,10 +25,11 @@ enum Methods: String {
 @main
 @objc class AppDelegate: FlutterAppDelegate, FlutterStreamHandler {
     private var eventSink: FlutterEventSink?
+    private var voipRegistry: PKPushRegistry?
     let client = VBotPhone.sharedInstance
     private var lastCallState: VBotCallState = .null
     private var lastCallName: String = ""
-   
+
     override func application(
         _ application: UIApplication,
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
@@ -34,7 +37,8 @@ enum Methods: String {
         GeneratedPluginRegistrant.register(with: self)
       
         let config = VBotConfig(
-            iconTemplateImageData: UIImage(named: "callkit-icon")?.pngData()
+            iconTemplateImageData: UIImage(named: "callkit-icon")?.pngData(),
+            environment: .staging
         )
         
         VBotPhone.sharedInstance.setup(with: config)
@@ -48,11 +52,25 @@ enum Methods: String {
         let chargingChannel = FlutterEventChannel(name: ChannelName.CALL_STATE_CHANNEL,
                                                   binaryMessenger: controller.binaryMessenger)
         chargingChannel.setStreamHandler(self)
+
+        self.setupPushKit()
+        self.checkMicrophonePermission()
       
         return super.application(application, didFinishLaunchingWithOptions: launchOptions)
     }
     
-    override func applicationWillTerminate(_ application: UIApplication) {}
+    private func setupPushKit() {
+        self.voipRegistry = PKPushRegistry(queue: DispatchQueue.main)
+        self.voipRegistry?.delegate = self
+        self.voipRegistry?.desiredPushTypes = [.voIP]
+    }
+
+    private func checkMicrophonePermission() {
+        let status = AVAudioSession.sharedInstance().recordPermission
+        if status == .undetermined {
+            AVAudioSession.sharedInstance().requestRecordPermission { _ in }
+        }
+    }
     
     func methodCall(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
         let mode = Methods(rawValue: call.method)
@@ -75,8 +93,6 @@ enum Methods: String {
             self.mute(call, result)
         case .SPEAKER:
             self.speaker(call, result)
-      
-            
         default:
             result(FlutterMethodNotImplemented)
             return
@@ -99,14 +115,16 @@ enum Methods: String {
         let envStr = (args?["environment"] as? String)
         let baseUrl = (args?["baseUrl"] as? String)
 
-        if envStr != nil || baseUrl != nil {
+        let customUrl = (baseUrl?.isEmpty == false) ? baseUrl : nil
+
+        if envStr != nil || customUrl != nil {
             var env: VBotEnvironment = .production
             switch envStr?.uppercased() {
             case "STAGING": env = .staging
             case "SANDBOX": env = .sandbox
             default: env = .production
             }
-            let config = VBotConfig(environment: env, customBaseUrl: baseUrl)
+            let config = VBotConfig(environment: env, customBaseUrl: customUrl)
             VBotPhone.sharedInstance.setConfig(config: config)
         }
 
@@ -149,7 +167,6 @@ enum Methods: String {
     }
     
     func getHotlines(_ call: FlutterMethodCall, _ result: @escaping FlutterResult) {
-        
         self.client.getHotlines { hotlines, error in
             if let error = error as NSError? {
                 result(FlutterError(code: "\(error.code)", message: error.localizedDescription, details: nil))
@@ -158,7 +175,6 @@ enum Methods: String {
             let hotlinesMap = hotlines?.map { hotline in
                 ["name": hotline.name, "phoneNumber": hotline.phoneNumber]
             }
-            dump(hotlinesMap)
             result(hotlinesMap)
         }
     }
@@ -192,7 +208,6 @@ enum Methods: String {
         self.eventSink = nil
         return nil
     }
-    
 }
 
 extension AppDelegate: VBotPhoneDelegate {
@@ -211,9 +226,29 @@ extension AppDelegate: VBotPhoneDelegate {
         eventSink(CallSink(self.lastCallState, name: self.lastCallName, isMute: muted, onHold: self.client.isCallHold()).toMap)
     }
     
-    // Hàm trả về nguyên nhân kết thúc cuộc gọi
+    func callEnded(reason: VBotEndCallReason, endedBy: VBotCallEndParty) {
+        print("callEnded reason: \(reason.rawValue), endedBy: \(endedBy)")
+    }
+    
     func callEnded(reason: VBotEndCallReason) {
         print("callEnded reason: \(reason.rawValue)")
+    }
+}
+
+extension AppDelegate: PKPushRegistryDelegate {
+    func pushRegistry(_ registry: PKPushRegistry, didUpdate pushCredentials: PKPushCredentials, for type: PKPushType) {
+        let token = pushCredentials.token.map { String(format: "%02.2hhx", $0) }.joined()
+        self.client.pushKitToken = token
+    }
+
+    func pushRegistry(_ registry: PKPushRegistry, didReceiveIncomingPushWith payload: PKPushPayload, for type: PKPushType, completion: @escaping () -> Void) {
+        self.client.startIncomingCall(payload: payload) {
+            completion()
+        }
+    }
+
+    func pushRegistry(_ registry: PKPushRegistry, didInvalidatePushTokenFor type: PKPushType) {
+        self.client.pushKitToken = nil
     }
 }
 
@@ -241,7 +276,7 @@ struct CallSink {
         self.onHold = onHold
     }
     
-   public static func getCallState(_ state: VBotCallState) -> String {
+    public static func getCallState(_ state: VBotCallState) -> String {
         switch state {
         case .calling, .early:
             return "calling"

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:vbot_flutter_demo/call_screen.dart';
@@ -30,6 +31,11 @@ class _MyHomePageState extends State<MyHomePage> {
         vbotManager.callStateStream.listen(
           (sink) {
             if (_isCallPagePushed || !mounted) return;
+
+            // Bỏ qua nếu cuộc gọi đã kết thúc — không mở call screen cho
+            // trạng thái disconnected/none (tránh flash UI "cuộc gọi kết thúc")
+            if (sink.state == 'disconnected' || sink.state == 'none') return;
+
             final isIncomingRinging =
                 (sink.state == 'incoming' || sink.state == 'confirmed') &&
                     sink.isIncoming;
@@ -38,6 +44,13 @@ class _MyHomePageState extends State<MyHomePage> {
                 sink.state == 'calling' && !sink.isIncoming;
 
             if (isIncomingRinging || isOutgoingCalling) {
+              // Double-check: cuộc gọi có thể đã kết thúc giữa lúc event
+              // emit và thời điểm navigate — bỏ qua nếu đã disconnected
+              final latest = vbotManager.currentSink;
+              if (latest != null &&
+                  (latest.state == 'disconnected' || latest.state == 'none')) {
+                return;
+              }
               _isCallPagePushed = true;
               Navigator.push(
                 context,
@@ -48,7 +61,7 @@ class _MyHomePageState extends State<MyHomePage> {
               });
             }
           },
-          onError: (error) => print("Error in callStateStream: $error"),
+          onError: (error) => debugPrint("Error in callStateStream: $error"),
         );
       },
     );
@@ -108,11 +121,6 @@ class ConnectViewWidget extends StatefulWidget {
 class _ConnectViewWidgetState extends State<ConnectViewWidget> {
   final vbotManager = VBotPhoneManager();
 
-  // Cấu hình môi trường và Base URL trực tiếp trong code
-  static const String configEnvironment = "PRODUCTION";
-  // Production uses the SDK's default production endpoint.
-  static const String configBaseUrl = "";
-
   final tokenController = TextEditingController();
   final phoneController = TextEditingController();
   final phoneFocusNode = FocusNode();
@@ -135,6 +143,14 @@ class _ConnectViewWidgetState extends State<ConnectViewWidget> {
       }
     });
     _checkConnect();
+  }
+
+  @override
+  void dispose() {
+    phoneFocusNode.dispose();
+    phoneController.dispose();
+    tokenController.dispose();
+    super.dispose();
   }
 
   void _scrollToField() {
@@ -176,11 +192,7 @@ class _ConnectViewWidgetState extends State<ConnectViewWidget> {
     }
 
     try {
-      final result = await vbotManager.connect(
-        tokenController.text,
-        environment: configEnvironment,
-        baseUrl: configBaseUrl,
-      );
+      final result = await vbotManager.connect(tokenController.text.trim());
 
       if (result != null) {
         setState(() {
@@ -237,16 +249,23 @@ class _ConnectViewWidgetState extends State<ConnectViewWidget> {
       isCalling = true;
     });
 
-    if (phoneController.text.isEmpty) {
+    final String input = phoneController.text.trim();
+    if (input.isEmpty) {
       setState(() {
         isCalling = false;
       });
       return;
     }
     try {
-      String hotlineNumber = selectedHotline?.phoneNumber ?? '';
-      final calleeName = await vbotManager.startCall(
-          phoneController.text, phoneController.text, hotlineNumber);
+      // Nếu độ dài < 6 ký tự: tự động nhận diện là mã nhánh thành viên (gọi nội bộ, hotline = "")
+      // Nếu độ dài >= 6 ký tự: là số điện thoại ngoại mạng (dùng hotline)
+      final bool isMemberCall = input.length < 6;
+
+      final String hotlineNumber =
+          isMemberCall ? '' : (selectedHotline?.phoneNumber ?? '');
+
+      final calleeName =
+          await vbotManager.startCall(input, input, hotlineNumber);
       callee = calleeName ?? "Error";
     } catch (e) {
       print("call exception: $e");
@@ -255,14 +274,6 @@ class _ConnectViewWidgetState extends State<ConnectViewWidget> {
         isCalling = false;
       });
     }
-  }
-
-  @override
-  void dispose() {
-    tokenController.dispose();
-    phoneController.dispose();
-    phoneFocusNode.dispose();
-    super.dispose();
   }
 
   @override
@@ -432,7 +443,7 @@ class _ConnectViewWidgetState extends State<ConnectViewWidget> {
                     }).toList(),
                   ),
                   const SizedBox(height: 12),
-                  // Phone Number Input
+                  // Phone Number / Extension Input
                   TextField(
                     focusNode: phoneFocusNode,
                     controller: phoneController,
@@ -442,12 +453,24 @@ class _ConnectViewWidgetState extends State<ConnectViewWidget> {
                     ],
                     onTap: _scrollToField,
                     decoration: InputDecoration(
-                      prefixIcon: const Icon(Icons.dialpad),
+                      prefixIcon: Icon(
+                        (phoneController.text.trim().isNotEmpty &&
+                                phoneController.text.trim().length < 6)
+                            ? Icons.badge_outlined
+                            : Icons.dialpad,
+                      ),
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(12),
                       ),
-                      labelText: 'Số điện thoại',
-                      hintText: 'Nhập số điện thoại cần gọi...',
+                      labelText: (phoneController.text.trim().isNotEmpty &&
+                              phoneController.text.trim().length < 6)
+                          ? 'Mã nhánh thành viên'
+                          : 'Số điện thoại / Mã nhánh',
+                      hintText: 'Nhập số điện thoại hoặc mã nhánh (ví dụ: 101)...',
+                      helperText: (phoneController.text.trim().isNotEmpty &&
+                              phoneController.text.trim().length < 6)
+                          ? 'Tự động gọi nội bộ (không qua Hotline)'
+                          : null,
                       suffixIcon: phoneController.text.isNotEmpty
                           ? IconButton(
                               icon: const Icon(Icons.clear),
@@ -467,7 +490,12 @@ class _ConnectViewWidgetState extends State<ConnectViewWidget> {
                     onPressed: isCalling ? null : _call,
                     icon: const Icon(Icons.call),
                     label: Text(
-                      isCalling ? "Đang gọi..." : "Gọi điện",
+                      isCalling
+                          ? "Đang gọi..."
+                          : ((phoneController.text.trim().isNotEmpty &&
+                                  phoneController.text.trim().length < 6)
+                              ? "Gọi thành viên"
+                              : "Gọi điện"),
                       style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                     ),
                     style: FilledButton.styleFrom(
